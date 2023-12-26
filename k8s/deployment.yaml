@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ape-routing-deployment
+  labels:
+    app: ape-routing-deployment
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: ape-routing
+  template:
+    metadata:
+      labels:
+        app: ape-routing
+    spec:
+      containers:
+        - image: jansuklje/ape-routing-service:latest
+          name: ape-routing
+          env:
+            - name: KUMULUZEE_DATASOURCES0_CONNECTIONURL
+              valueFrom:
+                secretKeyRef:
+                  name: database-secret-url
+                  key: url
+            - name: KUMULUZEE_DATASOURCES0_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: database-secret-username
+                  key: username
+            - name: KUMULUZEE_DATASOURCES0_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: database-secret-password
+                  key: password
+          ports:
+            - containerPort: 8080
