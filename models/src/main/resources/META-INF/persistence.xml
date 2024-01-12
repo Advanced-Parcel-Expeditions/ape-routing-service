@@ -1,26 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <persistence xmlns="http://xmlns.jcp.org/xml/ns/persistence" version="2.1">
     <persistence-unit name="ape-routing-jpa" transaction-type="RESOURCE_LOCAL">
-        <non-jta-data-source>jdbc/APEParcelDS</non-jta-data-source>
+        <non-jta-data-source>jdbc/APERoutingDS</non-jta-data-source>
 
-        <class>si.ape.routing.models.entities.ParcelEntity</class>
-        <class>si.ape.routing.models.entities.ParcelStatusEntity</class>
         <class>si.ape.routing.models.entities.StreetEntity</class>
         <class>si.ape.routing.models.entities.CityEntity</class>
         <class>si.ape.routing.models.entities.CountryEntity</class>
-        <class>si.ape.routing.models.entities.UserEntity</class>
         <class>si.ape.routing.models.entities.RoleEntity</class>
-        <class>si.ape.routing.models.entities.CustomerEntity</class>
+        <class>si.ape.routing.models.entities.BranchEntity</class>
+        <class>si.ape.routing.models.entities.BranchTypeEntity</class>
 
-        <class>si.ape.routing.models.converters.InstantAtributeConverter</class>
-        <class>si.ape.routing.models.converters.ParcelConverter</class>
-        <class>si.ape.routing.models.converters.ParcelStatusConverter</class>
         <class>si.ape.routing.models.converters.StreetConverter</class>
         <class>si.ape.routing.models.converters.CityConverter</class>
         <class>si.ape.routing.models.converters.CountryConverter</class>
-        <class>si.ape.routing.models.converters.UserConverter</class>
         <class>si.ape.routing.models.converters.RoleConverter</class>
-        <class>si.ape.routing.models.converters.CustomerConverter</class>
+        <class>si.ape.routing.models.converters.BranchConverter</class>
+        <class>si.ape.routing.models.converters.BranchTypeConverter</class>
 
         <properties>
             <property name="hibernate.dialect" value="org.hibernate.dialect.MySQL5Dialect"/>

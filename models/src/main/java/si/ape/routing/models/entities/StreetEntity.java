@@ -39,9 +39,9 @@ public class StreetEntity {
     @Id
     @ManyToOne
     @JoinColumns({
-            @JoinColumn(name = "code", referencedColumnName = "code"),
-            @JoinColumn(name = "name", referencedColumnName = "name"),
-            @JoinColumn(name = "country", referencedColumnName = "country_code")
+            @JoinColumn(name = "city_code", referencedColumnName = "code"),
+            @JoinColumn(name = "city_name", referencedColumnName = "name"),
+            @JoinColumn(name = "country_code", referencedColumnName = "country_code")
     })
     private CityEntity city;
 

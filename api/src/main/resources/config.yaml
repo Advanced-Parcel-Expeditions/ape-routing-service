@@ -8,4 +8,4 @@ kumuluzee:
     http:
       port: 8080
   datasources:
-    - jndi-name: jdbc/APEParcelDS
+    - jndi-name: jdbc/APERoutingDS

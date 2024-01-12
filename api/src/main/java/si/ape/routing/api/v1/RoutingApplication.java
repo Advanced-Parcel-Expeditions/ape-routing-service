@@ -11,10 +11,10 @@ import org.eclipse.microprofile.openapi.annotations.info.Info;
 import org.eclipse.microprofile.openapi.annotations.info.License;
 import org.eclipse.microprofile.openapi.annotations.servers.Server;
 
-@OpenAPIDefinition(info = @Info(title = "Parcel API", version = "v1",
+@OpenAPIDefinition(info = @Info(title = "Routing API", version = "v1",
         contact = @Contact(email = "ls6727@student.uni-lj.si, js1471@student.uni-lj.si"),
-        license = @License(name = "dev"), description = "API for managing image metadata."),
+        license = @License(name = "dev"), description = "API for routing."),
         servers = @Server(url = "http://localhost:8080/"))
 @ApplicationPath("/v1")
-public class ParcelApplication extends Application {
+public class RoutingApplication extends Application {
 }
