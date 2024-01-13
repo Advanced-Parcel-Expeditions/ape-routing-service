@@ -52,4 +52,12 @@ public class Country {
         this.name = name;
     }
 
+    @Override
+    public boolean equals(Object obj) {
+        if (obj == null) return false;
+        if (!(obj instanceof Country)) return false;
+        Country other = (Country) obj;
+        return this.code.equals(other.code);
+    }
+
 }

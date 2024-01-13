@@ -121,4 +121,17 @@ public class City {
         this.country = country;
     }
 
+    @Override
+    public boolean equals(Object obj) {
+        if (!(obj instanceof City)) {
+            return false;
+        }
+        City other = (City) obj;
+        return this.code.equals(other.code) &&
+                this.name.equals(other.name) &&
+                this.country.equals(other.country) &&
+                this.latitude.equals(other.latitude) &&
+                this.longitude.equals(other.longitude);
+    }
+
 }

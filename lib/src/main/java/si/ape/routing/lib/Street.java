@@ -75,4 +75,15 @@ public class Street {
         this.city = city;
     }
 
+    @Override
+    public boolean equals(Object obj) {
+        if (obj instanceof Street) {
+            Street street = (Street) obj;
+            return street.getStreetName().equals(this.getStreetName()) &&
+                    street.getStreetNumber().equals(this.getStreetNumber()) &&
+                    street.getCity().equals(this.getCity());
+        }
+        return false;
+    }
+
 }

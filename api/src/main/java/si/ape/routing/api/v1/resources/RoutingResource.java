@@ -1,15 +1,13 @@
 package si.ape.routing.api.v1.resources;
 
-import org.eclipse.microprofile.openapi.annotations.OpenAPIDefinition;
 import org.eclipse.microprofile.openapi.annotations.Operation;
-import org.eclipse.microprofile.openapi.annotations.media.Content;
-import org.eclipse.microprofile.openapi.annotations.media.Schema;
-import org.eclipse.microprofile.openapi.annotations.parameters.RequestBody;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
 import si.ape.routing.api.v1.resources.requests.NextHopRequest;
+import si.ape.routing.api.v1.resources.responses.NextHopResponse;
 import si.ape.routing.lib.Branch;
-import si.ape.routing.lib.Street;
+import si.ape.routing.lib.data.Pair;
+import si.ape.routing.lib.data.Reason;
 import si.ape.routing.services.beans.RoutingBean;
 
 import javax.enterprise.context.ApplicationScoped;
@@ -52,13 +50,21 @@ public class RoutingResource {
             return Response.status(Response.Status.BAD_REQUEST).build();
         }
 
-        Branch nextHop = routingBean.nextHop(request.getSource(), request.getDestination());
+        Pair<Branch, Reason> nextHopPair = routingBean.nextHop(request.getSource(), request.getDestination());
 
-        if (nextHop == null) {
-            return Response.status(Response.Status.NOT_FOUND).build();
+        if (nextHopPair.first == null) {
+            if (nextHopPair.second == Reason.NO_PATH_FOUND) {
+                return Response.status(Response.Status.NOT_FOUND).build();
+            } else {
+                return Response.status(Response.Status.INTERNAL_SERVER_ERROR).build();
+            }
         }
 
-        return Response.ok(nextHop).build();
+        System.out.println(nextHopPair.first.getId());
+
+        NextHopResponse response = new NextHopResponse(nextHopPair.first, nextHopPair.second);
+
+        return Response.ok(response).build();
     }
 
 

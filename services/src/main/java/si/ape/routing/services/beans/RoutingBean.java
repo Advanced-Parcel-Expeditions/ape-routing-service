@@ -1,373 +1,302 @@
 package si.ape.routing.services.beans;
 
+import org.jgrapht.GraphPath;
 import org.jgrapht.alg.shortestpath.DijkstraShortestPath;
-import org.jgrapht.alg.util.Pair;
 import org.jgrapht.graph.DefaultWeightedEdge;
-import org.jgrapht.graph.SimpleDirectedWeightedGraph;
+import org.jgrapht.graph.SimpleWeightedGraph;
 import org.json.JSONObject;
 import si.ape.routing.lib.Branch;
 import si.ape.routing.lib.Street;
 
+import javax.annotation.PostConstruct;
 import javax.enterprise.context.ApplicationScoped;
-import javax.enterprise.context.RequestScoped;
 import javax.inject.Inject;
 import javax.persistence.EntityManager;
 import javax.ws.rs.client.Client;
 import javax.ws.rs.client.ClientBuilder;
 import javax.ws.rs.core.Response;
-import java.net.URL;
 import java.util.*;
 import java.util.logging.Logger;
-import java.util.stream.Collectors;
 
 import si.ape.routing.models.converters.BranchConverter;
 import si.ape.routing.models.entities.BranchEntity;
 
+import si.ape.routing.lib.data.Pair;
+import si.ape.routing.lib.data.Reason;
+
+/**
+ * The RoutingBean class is a stateless session bean that provides methods for manipulating the database. It provides
+ * a method for calculating the next hop towards the specified destination, etc. and thus handles all the business
+ * logic of the microservice.
+ */
 @ApplicationScoped
 public class RoutingBean {
 
+    /**
+     * The routing bean's logger.
+     */
     private Logger log = Logger.getLogger(RoutingBean.class.getName());
 
+    /**
+     * The entity manager.
+     */
     @Inject
     private EntityManager em;
 
-    private SimpleDirectedWeightedGraph<Integer, DefaultWeightedEdge> graph = null;
+    /**
+     * The graph that represents the network of branches.
+     */
+    private SimpleWeightedGraph<Integer, DefaultWeightedEdge> graph = null;
 
-    private final double haversineMaxDistance = 200; // km
+    /**
+     * The maximum distance between two branches for them to be considered connected.
+     */
+    private final double HAVERSINE_MAX_DISTANCE = 200; // km
 
-    public RoutingBean() {
+    /**
+     * Initializes the bean by generating the graph.
+     */
+    @PostConstruct
+    public void init() {
+        log.info("RoutingBean created.");
         if (graph == null) {
             generateGraph();
         }
-    }
-
-    public Branch nextHop(Street source, Street destination) {
-        return null;
-    }
-
-
-
-    public Branch nextHopOld(Street source, Street destination) {
-
-        try {
-            List<BranchEntity> branchEntities = em.createNamedQuery("BranchEntity.getAll")
-                    .getResultList();
-            ArrayList<Branch> branches = branchEntities.stream()
-                    .map(BranchConverter::toDto)
-                    .collect(ArrayList::new, ArrayList::add, ArrayList::addAll);
-
-            // Create graph.
-            /*SimpleDirectedWeightedGraph<Integer, DefaultWeightedEdge> graph =
-                    new SimpleDirectedWeightedGraph<>(DefaultWeightedEdge.class);*/
-            // Only create the graph if it does not exist yet, i.e. if this is the first time
-            // this method is called, which should be the case for the first request. This is
-            // a form of caching, to prevent hitting the Google Distance Matrix API too often.
-            if (graph == null) {
-                graph = new SimpleDirectedWeightedGraph<>(DefaultWeightedEdge.class);
-            }
-            for (Branch branch : branches) {
-                graph.addVertex(branch.getId());
-            }
-
-            // If the graph is empty, add edges between all branches that are close enough.
-            // Again, this is a form of caching, to prevent hitting the Google Distance Matrix API too often.
-            if (graph.edgeSet().isEmpty()) {
-                /*final int MAX_DISTANCE = 200; // km
-
-                // Create both-ways connections between all parcel centers. This is needed due to the limitations of the used
-                // version of JGraphT library, as it does not include a functional undirected graph variant.
-                double distance;
-                for (int i = 0; i < branches.size(); i++) {
-                    for (int j = 0; j < branches.size(); j++) {
-                        if (i != j) {
-                            Double sourceLatitude = branches.get(i).getStreet().getCity().getLatitude();
-                            Double sourceLongitude = branches.get(i).getStreet().getCity().getLongitude();
-                            Double destinationLatitude = branches.get(j).getStreet().getCity().getLatitude();
-                            Double destinationLongitude = branches.get(j).getStreet().getCity().getLongitude();
-                            distance = getDistanceBetweenCoordinates(sourceLatitude, sourceLongitude,
-                                    destinationLatitude, destinationLongitude);
-                            // Add edge only for branches that are close enough.
-                            if (distance < MAX_DISTANCE) {
-                                DefaultWeightedEdge edge = graph.addEdge(
-                                        branches.get(i).getId(),
-                                        branches.get(j).getId()
-                                );
-                                graph.setEdgeWeight(edge, distance);
-                            }
-                        }
-                    }
-                }*/
-                generateGraph(branches);
-            }
-
-            /*Branch closestBranchToSource = null;
-            Branch closestBranchToDestination = null;
-            String sourceIsoCode = source.getCity().getCountry().getCode();
-            Double sourceLatitude = source.getCity().getLatitude();
-            Double sourceLongitude = source.getCity().getLongitude();
-            String destinationIsoCode = destination.getCity().getCountry().getCode();
-            Double destinationLatitude = destination.getCity().getLatitude();
-            Double destinationLongitude = destination.getCity().getLongitude();
-            double sourceMinimumDistance = Double.MAX_VALUE;
-            double destinationMinimumDistance = Double.MAX_VALUE;
-            for (Branch branch : branches) {
-                String branchIsoCode = branch.getStreet().getCity().getCountry().getCode();
-                Double branchLatitude = branch.getStreet().getCity().getLatitude();
-                Double branchLongitude = branch.getStreet().getCity().getLongitude();
-                if (branchIsoCode.equals(sourceIsoCode)) {
-                    double currentDistance = getDistanceBetweenCoordinates(sourceLatitude, sourceLongitude,
-                            branchLatitude, branchLongitude);
-                    if (currentDistance < sourceMinimumDistance) {
-                        sourceMinimumDistance = currentDistance;
-                        closestBranchToSource = branch;
-                    }
-                } else if (branchIsoCode.equals(destinationIsoCode)) {
-                    double currentDistance = getDistanceBetweenCoordinates(destinationLatitude, destinationLongitude,
-                            branchLatitude, branchLongitude);
-                    if (currentDistance < destinationMinimumDistance) {
-                        destinationMinimumDistance = currentDistance;
-                        closestBranchToDestination = branch;
-                    }
-                }
-            }*/
-
-            String sourceIsoCode = source.getCity().getCountry().getCode();
-            Double sourceLatitude = source.getCity().getLatitude();
-            Double sourceLongitude = source.getCity().getLongitude();
-            String destinationIsoCode = destination.getCity().getCountry().getCode();
-            Double destinationLatitude = destination.getCity().getLatitude();
-            Double destinationLongitude = destination.getCity().getLongitude();
-            Pair<Branch, Branch> closestBranches = getClosestBranches(
-                    sourceLatitude, sourceLongitude, sourceIsoCode,
-                    destinationLatitude, destinationLongitude, destinationIsoCode,
-                    branches
-            );
-            if (closestBranches == null) {
-                return null;
-            }
-            Branch closestBranchToSource = closestBranches.t;
-            Branch closestBranchToDestination = closestBranches.u;
-
-            if (closestBranchToSource == null || closestBranchToDestination == null) {
-                return null;
-            }
-
-            List<DefaultWeightedEdge> shortestPath = DijkstraShortestPath.findPathBetween(
-                    graph,
-                    closestBranchToSource.getId(),
-                    closestBranchToDestination.getId()
-            ).getEdgeList();
-
-            ArrayList<Branch> shortestPathBranches = new ArrayList<>();
-            int count = 0;
-            for (DefaultWeightedEdge edge : shortestPath) {
-                String edgeString = edge.toString();
-                String secondId = edgeString.substring(edgeString.lastIndexOf(' ') + 1, edgeString.length() - 1);
-                if (count == 0) {
-                    String firstId = edgeString.substring(1, edgeString.indexOf(' '));
-                    List<Branch> nodeBranches = branches
-                            .stream()
-                            .filter(b -> Integer.toString(b.getId()).equals(firstId) || Integer.toString(b.getId()).equals(secondId))
-                            .collect(Collectors.toList());
-                    shortestPathBranches.addAll(nodeBranches);
-                } else {
-                    Optional<Branch> branch = branches
-                            .stream().filter(b -> Integer.toString(b.getId()).equals(secondId)).findFirst();
-                    branch.ifPresent(shortestPathBranches::add);
-                }
-                count++;
-            }
-
-            return shortestPathBranches.get(0);
-        } catch (Exception e) {
-            log.severe(e.getMessage());
-            rollbackTx();
-        }
-        return null;
-    }
-
-    private void generateGraph() {
-        List<BranchEntity> parcelCenterEntities = em.createNamedQuery("BranchEntity.getAllParcelCenters")
-                .getResultList();
-        List<Branch> parcelCenters = parcelCenterEntities.stream()
-                .map(BranchConverter::toDto)
-                .toList();
-
-        // Set up the graph.
-        if (graph == null) {
-            graph = new SimpleDirectedWeightedGraph<>(DefaultWeightedEdge.class);
-
-            for (Branch parcelCenter : parcelCenters) {
-                graph.addVertex(parcelCenter.getId());
-            }
-        }
-
-        double[][] adjacencyMatrix = new double[parcelCenters.size()][parcelCenters.size()];
-
-        for (int i = 0; i < adjacencyMatrix.length; i++) {
-            for (int j = 0; j < adjacencyMatrix.length; j++) {
-                if (i == j) {
-                    adjacencyMatrix[i][j] = 0;
-                } else {
-                    double sourceLatitude = parcelCenters.get(i).getStreet().getCity().getLatitude();
-                    double sourceLongitude = parcelCenters.get(i).getStreet().getCity().getLongitude();
-                    double destinationLatitude = parcelCenters.get(j).getStreet().getCity().getLatitude();
-                    double destinationLongitude = parcelCenters.get(j).getStreet().getCity().getLongitude();
-                    double distance = haversineDistance(sourceLatitude, sourceLongitude, destinationLatitude, destinationLongitude);
-                    if (distance < haversineMaxDistance) {
-                        adjacencyMatrix[i][j] = Double.MAX_VALUE;
-                    } else {
-                        adjacencyMatrix[i][j] = -1;
-                    }
-                }
-            }
-        }
-
-        String apiUrl = "https://maps.googleapis.com/maps/api/distancematrix/json";
-        Client client = ClientBuilder.newClient();
-        StringBuilder origins = new StringBuilder();
-        StringBuilder destinations = new StringBuilder();
-        int numOfDestinations = 0;
-        HashMap<Integer, Integer> centersToSizes = new HashMap<>();
-        for (int i = 0; i < parcelCenters.size(); i++) {
-            double sourceLatitude = parcelCenters.get(i).getStreet().getCity().getLatitude();
-            double sourceLongitude = parcelCenters.get(i).getStreet().getCity().getLongitude();
-            ArrayList<Integer> destinationsIndexes = new ArrayList<>();
-            for (int j = 0; j < adjacencyMatrix[i].length; j++) {
-                if (adjacencyMatrix[i][j] == Double.MAX_VALUE) {
-                    destinationsIndexes.add(j);
-                }
-            }
-
-            origins.append(sourceLatitude).append(",").append(sourceLongitude).append("|");
-
-            int destinationCount = 0;
-            int lastIndex = 0;
-            for (int j : destinationsIndexes) {
-                double destinationLatitude = parcelCenters.get(j).getStreet().getCity().getLatitude();
-                double destinationLongitude = parcelCenters.get(j).getStreet().getCity().getLongitude();
-                destinations.append(destinationLatitude).append(",").append(destinationLongitude).append("|");
-                destinationCount++;
-                if (destinationCount >= 24) {
-                    client = ClientBuilder.newClient();
-                    Response response = client.target(apiUrl)
-                            .queryParam("origins", origins.toString())
-                            .queryParam("destinations", destinations.toString())
-                            .queryParam("units", "metric")
-                            .queryParam("key", "AIzaSyARV5eFh9Kopz9tNUBFZWjpD8QS99mGDqE")
-                            .request()
-                            .get();
-
-                    if (response.getStatus() == 200) {
-                        JSONObject json = new JSONObject(response.readEntity(String.class));
-                        for (int k = lastIndex; k < j; k++) {
-                            double distance = json.getJSONArray("rows")
-                                    .getJSONObject(0)
-                                    .getJSONArray("elements")
-                                    .getJSONObject(k - lastIndex)
-                                    .getJSONObject("distance")
-                                    .getDouble("value") / 1000;
-                            adjacencyMatrix[i][k] = distance;
-                            adjacencyMatrix[k][i] = distance;
-                        }
-                    }
-                    lastIndex = j - 1;
-                }
-            }
-        }
-//            }
-//            if (numOfDestinations + destinationsIndexes.size() > 25) {
-//                client = ClientBuilder.newClient();
-//                Response response = client.target(apiUrl)
-//                        .queryParam("origins", origins.toString())
-//                        .queryParam("destinations", destinations.toString())
-//                        .queryParam("units", "metric")
-//                        .queryParam("key", "AIzaSyARV5eFh9Kopz9tNUBFZWjpD8QS99mGDqE")
-//                        .request()
-//                        .get();
-//
-//                if (response.getStatus() == 200) {
-//                    numOfDestinations = destinationsIndexes.size();
-//                    List<Integer> sortedKeys = centersToSizes.keySet().stream().sorted().toList();
-//                    JSONObject json = new JSONObject(response.readEntity(String.class));
-//                    int offset = 0;
-//                    for (int key : sortedKeys) {
-//                        int nextValid = 0;
-//                        for (int count = 0; count <  centersToSizes.get(key); count++) {
-//                            double distance = json.getJSONArray("rows")
-//                                    .getJSONObject(key)
-//                                    .getJSONArray("elements")
-//                                    .getJSONObject(offset + count)
-//                                    .getJSONObject("distance")
-//                                    .getDouble("value") / 1000;
-//                            while (adjacencyMatrix[key][nextValid] != Double.MIN_VALUE) {
-//                                nextValid++;
-//                            }
-//                            adjacencyMatrix[key][nextValid] = distance;
-//                            adjacencyMatrix[nextValid][key] = distance;
-//                            nextValid++;
-//                        }
-//                    }
-//                }
-//            } else {
-//                for (int j = 0; j < destinationsIndexes.size(); j++) {
-//                    int destinationIndex = destinationsIndexes.get(j);
-//                    double destinationLatitude = parcelCenters.get(destinationIndex).getStreet().getCity().getLatitude();
-//                    double destinationLongitude = parcelCenters.get(destinationIndex).getStreet().getCity().getLongitude();
-//                    origins.append(sourceLatitude).append(",").append(sourceLongitude).append("|");
-//                    destinations.append(destinationLatitude).append(",").append(destinationLongitude).append("|");
-//                }
-//            }
-//            centersToSizes.put(i, destinationsIndexes.size());
-//        }
-
+        log.info("Graph generated.");
     }
 
     /**
-     * Generates the graph of all branches and their distances between each other using only one Google API request call.
+     * Gets the next hop between the source and destination.
+     *
+     * @param source      The source street.
+     * @param destination The destination street.
+     * @return The next hop between the source and destination.
      */
-    private void generateGraph(List<Branch> branches) {
-        final int MAX_DISTANCE = 200; // km
+    public Pair<Branch, Reason> nextHop(Street source, Street destination) {
+        Branch sourceBranch = getClosestBranch(source);
+        Branch destinationBranch = getClosestBranch(destination);
 
-        StringBuilder coordinates = new StringBuilder();
+        if (sourceBranch == null || destinationBranch == null) {
+            if (sourceBranch == null) {
+                log.severe("Source branch is null.");
+            }
+            if (destinationBranch == null) {
+                log.severe("Destination branch is null.");
+            }
+            return new Pair<>(null, Reason.INTERNAL_ERROR);
+        }
 
-        for (int i = 0; i <  branches.size(); i++) {
-            Double latitude = branches.get(i).getStreet().getCity().getLatitude();
-            Double longitude = branches.get(i).getStreet().getCity().getLongitude();
-            coordinates.append(latitude).append(",").append(longitude);
-            if (i < branches.size() - 1) {
-                coordinates.append("|");
+        if (sourceBranch.equals(destinationBranch)) {
+            return new Pair<>(sourceBranch, Reason.ALREADY_AT_DESTINATION);
+        }
+
+        // If the checks above pass, we can use the graph to find the shortest path between the source and destination.
+        //List<DefaultWeightedEdge> path = DijkstraShortestPath.findPathBetween(graph, sourceBranch.getId(), destinationBranch.getId()).getEdgeList();
+        GraphPath<Integer, DefaultWeightedEdge> graphPath = DijkstraShortestPath.findPathBetween(graph, sourceBranch.getId(), destinationBranch.getId());
+        if (graphPath == null) {
+            log.info("Graph path is null, the algorithm failed to find a path.");
+            return new Pair<>(null, Reason.NO_PATH_FOUND);
+        }
+        List<DefaultWeightedEdge> path = graphPath.getEdgeList();
+
+        // If the path is null, that means there is no path between the source and destination.
+        if (path == null || path.isEmpty()) {
+            log.info("Path is null or empty, the algorithm failed to find a path.");
+            return new Pair<>(null, Reason.NO_PATH_FOUND);
+        }
+
+        // Parse the path to find the next hop.
+        int nextHopId = graph.getEdgeTarget(path.get(0));
+        System.out.println("PATH SIZE:" + path.size());
+        if (path.size() > 1) {
+            for (int i = 1; i < path.size(); i++) {
+                System.out.println("PATH " + i + ": " + graph.getEdgeTarget(path.get(i)));
+            }
+        }
+        return new Pair<>(BranchConverter.toDto(em.find(BranchEntity.class, nextHopId)), Reason.PATH_FOUND);
+    }
+
+    /**
+     * Gets the closest branch to the provided street.
+     *
+     * @param street The street.
+     * @return The closest branch to the provided street.
+     */
+    private Branch getClosestBranch(Street street) {
+        List<BranchEntity> branchEntities = em.createNamedQuery("BranchEntity.getAll", BranchEntity.class).getResultList();
+        List<Branch> branches = branchEntities.stream().map(BranchConverter::toDto).toList();
+
+        // If the provided street is not the address of a branch, that means the package is being sent from a
+        // customer's address. In that case, we will have to find the closest branch to the customer's address, with the
+        // stipulation that the branch must be in the same country.
+        if (branches.stream().noneMatch(branch -> branch.getStreet().equals(street))) {
+            List<Branch> branchesInSameCountry = branches.stream()
+                    .filter(branch -> branch.getStreet().getCity().getCountry().getCode().equals(street.getCity().getCountry().getCode()))
+                    .toList();
+
+            // Combine the branches into a single Google API request to save time and credits.
+            double sourceLatitude = street.getCity().getLatitude();
+            double sourceLongitude = street.getCity().getLongitude();
+            StringBuilder origins = new StringBuilder().append(sourceLatitude).append(",").append(sourceLongitude);
+            StringBuilder destinations = new StringBuilder();
+            for (int i = 0; i < branchesInSameCountry.size(); i++) {
+                Branch branch = branchesInSameCountry.get(i);
+                double destinationLatitude = branch.getStreet().getCity().getLatitude();
+                double destinationLongitude = branch.getStreet().getCity().getLongitude();
+                destinations.append(destinationLatitude).append(",").append(destinationLongitude);
+                if (i != branchesInSameCountry.size() - 1) {
+                    destinations.append("|");
+                }
+            }
+            String apiUrl = "https://maps.googleapis.com/maps/api/distancematrix/json";
+            String apiKey = "AIzaSyARV5eFh9Kopz9tNUBFZWjpD8QS99mGDqE";
+            Client client = ClientBuilder.newClient();
+            Response response = client.target(apiUrl)
+                    .queryParam("origins", origins)
+                    .queryParam("destinations", destinations)
+                    .queryParam("units", "metric")
+                    .queryParam("key", apiKey)
+                    .request()
+                    .get();
+
+            if (response.getStatus() == 200) {
+                JSONObject json = new JSONObject(response.readEntity(String.class));
+                double minDistance = Double.MAX_VALUE;
+                Branch closestBranch = null;
+                for (int i = 0; i < branchesInSameCountry.size(); i++) {
+                    Branch branch = branchesInSameCountry.get(i);
+                    double distance = json.getJSONArray("rows").getJSONObject(0).getJSONArray("elements").getJSONObject(i).getJSONObject("distance").getDouble("value");
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        closestBranch = branch;
+                    }
+                }
+                return closestBranch;
+            } else {
+                // If the Google API request fails, we will have to find the closest branch to the customer's address
+                // using the Haversine formula.
+                double minDistance = Double.MAX_VALUE;
+                Branch closestBranch = null;
+                for (Branch branch : branchesInSameCountry) {
+                    double destinationLatitude = branch.getStreet().getCity().getLatitude();
+                    double destinationLongitude = branch.getStreet().getCity().getLongitude();
+                    double distance = haversineDistance(sourceLatitude, sourceLongitude, destinationLatitude, destinationLongitude);
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        closestBranch = branch;
+                    }
+                }
+                return closestBranch;
+            }
+        } else {
+            // If the provided street is the address of a branch, just return that branch.
+            return branches.stream().filter(branch -> branch.getStreet().equals(street)).findFirst().orElse(null);
+        }
+    }
+
+    /**
+     * Generates the graph that represents the network of branches.
+     */
+    private void generateGraph() {
+        graph = new SimpleWeightedGraph<>(DefaultWeightedEdge.class);
+        List<BranchEntity> branchEntities = em.createNamedQuery("BranchEntity.getAll", BranchEntity.class).getResultList();
+        List<Branch> branches = branchEntities.stream().map(BranchConverter::toDto).toList();
+        branches.forEach(branch -> graph.addVertex(branch.getId()));
+
+        for (int i = 0; i < branches.size(); i++) {
+            ArrayList<Branch> connectedBranches = getConnectedBranches(i, branches);
+            double sourceLatitude = branches.get(i).getStreet().getCity().getLatitude();
+            double sourceLongitude = branches.get(i).getStreet().getCity().getLongitude();
+            StringBuilder origins = new StringBuilder().append(sourceLatitude).append(",").append(sourceLongitude);
+            StringBuilder destinations = new StringBuilder();
+            if (connectedBranches.size() < 25) {
+                makeSmallRequest(i, origins, destinations, branches, connectedBranches);
+            } else {
+                // If the branch has more than 25 connected branches, we will have to make multiple requests to the
+                // Google Maps API.
+                makeBatchedRequest(i, origins, destinations, branches, connectedBranches);
+            }
+        }
+    }
+
+    /**
+     * Gets the branches that are connected to the branch at the specified index.
+     *
+     * @param branchIndex The index of the branch.
+     * @param branches    The list of branches.
+     * @return The branches that are connected to the branch at the specified index.
+     */
+    private ArrayList<Branch> getConnectedBranches(int branchIndex, List<Branch> branches) {
+        ArrayList<Branch> connectedBranches = new ArrayList<>();
+        double sourceLatitude = branches.get(branchIndex).getStreet().getCity().getLatitude();
+        double sourceLongitude = branches.get(branchIndex).getStreet().getCity().getLongitude();
+        for (int i = 0; i < branches.size(); i++) {
+            if (branchIndex != i) {
+                double destinationLatitude = branches.get(i).getStreet().getCity().getLatitude();
+                double destinationLongitude = branches.get(i).getStreet().getCity().getLongitude();
+                double distance = haversineDistance(sourceLatitude, sourceLongitude, destinationLatitude, destinationLongitude);
+                if (distance < HAVERSINE_MAX_DISTANCE) {
+                    connectedBranches.add(branches.get(i));
+                }
+            }
+        }
+        return connectedBranches;
+    }
+
+    /**
+     * Makes a request to the Google Maps API to get the distances between the source branch and the connected branches.
+     * This method is used when the source branch has less than 25 connected branches.
+     *
+     * @param branchIndex       The index of the source branch.
+     * @param origins           The StringBuilder that contains the origins.
+     * @param destinations      The StringBuilder that contains the destinations.
+     * @param branches          The list of branches.
+     * @param connectedBranches The list of connected branches.
+     */
+    private void makeSmallRequest(int branchIndex, StringBuilder origins, StringBuilder destinations, List<Branch> branches, ArrayList<Branch> connectedBranches) {
+        Branch sourceBranch = branches.get(branchIndex);
+        for (int i = 0; i < connectedBranches.size(); i++) {
+            Branch destinationBranch = connectedBranches.get(i);
+            double destinationLatitude = destinationBranch.getStreet().getCity().getLatitude();
+            double destinationLongitude = destinationBranch.getStreet().getCity().getLongitude();
+            destinations.append(destinationLatitude).append(",").append(destinationLongitude);
+            if (i != connectedBranches.size() - 1) {
+                destinations.append("|");
             }
         }
 
         String apiUrl = "https://maps.googleapis.com/maps/api/distancematrix/json";
+        String apiKey = "AIzaSyARV5eFh9Kopz9tNUBFZWjpD8QS99mGDqE";
         Client client = ClientBuilder.newClient();
         Response response = client.target(apiUrl)
-                .queryParam("origins", coordinates.toString())
-                .queryParam("destinations", coordinates.toString())
+                .queryParam("origins", origins)
+                .queryParam("destinations", destinations)
                 .queryParam("units", "metric")
-                .queryParam("key", "AIzaSyARV5eFh9Kopz9tNUBFZWjpD8QS99mGDqE")
+                .queryParam("key", apiKey)
                 .request()
                 .get();
 
         if (response.getStatus() == 200) {
             JSONObject json = new JSONObject(response.readEntity(String.class));
-            double distance;
-            for (int i = 0; i < branches.size(); i++) {
-                for (int j = 0; j < branches.size(); j++) {
-                    if (i != j) {
-                        distance = json.getJSONArray("rows")
-                                .getJSONObject(i)
-                                .getJSONArray("elements")
-                                .getJSONObject(j)
-                                .getJSONObject("distance")
-                                .getDouble("value") / 1000;
-                        // Add edge only for branches that are close enough.
-                        if (distance < MAX_DISTANCE) {
-                            DefaultWeightedEdge edge = graph.addEdge(
-                                    branches.get(i).getId(),
-                                    branches.get(j).getId()
-                            );
+            for (int i = 0; i < connectedBranches.size(); i++) {
+                Branch destinationBranch = connectedBranches.get(i);
+                // Handle empty JSONArrays.
+                if (!json.getJSONArray("rows").isEmpty() && !json.getJSONArray("rows").getJSONObject(0).getJSONArray("elements").isEmpty()) {
+                    if (json.getJSONArray("rows").getJSONObject(0).getJSONArray("elements").getJSONObject(i).has("distance")) {
+                        double distance = json.getJSONArray("rows").getJSONObject(0).getJSONArray("elements").getJSONObject(i).getJSONObject("distance").getDouble("value");
+                        DefaultWeightedEdge edge = graph.addEdge(sourceBranch.getId(), destinationBranch.getId());
+                        if (edge != null) {
+                            graph.setEdgeWeight(edge, distance);
+                        }
+                    } else {
+                        // If the distance is not found, we will have to use the Haversine formula.
+                        double sourceLatitude = sourceBranch.getStreet().getCity().getLatitude();
+                        double sourceLongitude = sourceBranch.getStreet().getCity().getLongitude();
+                        double destinationLatitude = destinationBranch.getStreet().getCity().getLatitude();
+                        double destinationLongitude = destinationBranch.getStreet().getCity().getLongitude();
+                        double distance = haversineDistance(sourceLatitude, sourceLongitude, destinationLatitude, destinationLongitude);
+                        DefaultWeightedEdge edge = graph.addEdge(sourceBranch.getId(), destinationBranch.getId());
+                        if (edge != null) {
                             graph.setEdgeWeight(edge, distance);
                         }
                     }
@@ -376,109 +305,95 @@ public class RoutingBean {
         }
     }
 
-    private Pair<Branch, Branch> getClosestBranches(double sourceLatitude, double sourceLongitude, String sourceISO,
-                                                    double destinationLatitude, double destinationLongitude, String destinationISO,
-                                                    List<Branch> branches) {
-        try {
-            StringBuilder coordinates = new StringBuilder();
-            coordinates.append(sourceLatitude).append(",").append(sourceLongitude).append("|")
-                    .append(destinationLatitude).append(",").append(destinationLongitude);
-
-            StringBuilder destinations = new StringBuilder();
-            for (int i = 0; i < branches.size(); i++) {
-                Double latitude = branches.get(i).getStreet().getCity().getLatitude();
-                Double longitude = branches.get(i).getStreet().getCity().getLongitude();
-                destinations.append(latitude).append(",").append(longitude);
-                if (i < branches.size() - 1) {
+    /**
+     * Makes multiple requests to the Google Maps API to get the distances between the source branch and the connected
+     * branches. This method is used when the source branch has more than 25 connected branches.
+     *
+     * @param branchIndex       The index of the source branch.
+     * @param origins           The StringBuilder that contains the origins.
+     * @param destinations      The StringBuilder that contains the destinations.
+     * @param branches          The list of branches.
+     * @param connectedBranches The list of connected branches.
+     */
+    private void makeBatchedRequest(int branchIndex, StringBuilder origins, StringBuilder destinations, List<Branch> branches, ArrayList<Branch> connectedBranches) {
+        Branch sourceBranch = branches.get(branchIndex);
+        final int batchSize = 25;
+        final int numberOfBatches = (int) Math.ceil((double) connectedBranches.size() / batchSize);
+        for (int i = 0; i < numberOfBatches; i++) {
+            int startIndex = i * batchSize;
+            int endIndex = Math.min((i + 1) * batchSize, connectedBranches.size());
+            for (int j = startIndex; j < endIndex; j++) {
+                Branch destinationBranch = connectedBranches.get(j);
+                double destinationLatitude = destinationBranch.getStreet().getCity().getLatitude();
+                double destinationLongitude = destinationBranch.getStreet().getCity().getLongitude();
+                destinations.append(destinationLatitude).append(",").append(destinationLongitude);
+                if (j != endIndex - 1) {
                     destinations.append("|");
                 }
             }
 
             String apiUrl = "https://maps.googleapis.com/maps/api/distancematrix/json";
+            String apiKey = "AIzaSyARV5eFh9Kopz9tNUBFZWjpD8QS99mGDqE";
             Client client = ClientBuilder.newClient();
             Response response = client.target(apiUrl)
-                    .queryParam("origins", coordinates.toString())
-                    .queryParam("destinations", destinations.toString())
-                    .queryParam("units", "metrics")
-                    .queryParam("key", "AIzaSyARV5eFh9Kopz9tNUBFZWjpD8QS99mGDqE")
+                    .queryParam("origins", origins)
+                    .queryParam("destinations", destinations)
+                    .queryParam("units", "metric")
+                    .queryParam("key", apiKey)
                     .request()
                     .get();
 
             if (response.getStatus() == 200) {
                 JSONObject json = new JSONObject(response.readEntity(String.class));
-                double minDistanceToSource = Double.MAX_VALUE;
-                int closestBranchToSourceIndex = 0;
-                double minDistanceToDestination = Double.MAX_VALUE;
-                int closestBranchToDestinationIndex = 0;
-                double currentDistance;
-                for (int i = 0; i < 2; i++) {
-                    for (int j = 0; j < branches.size(); j++) {
-                        currentDistance = json.getJSONArray("rows")
-                                .getJSONObject(i)
-                                .getJSONArray("elements")
-                                .getJSONObject(j)
-                                .getJSONObject("distance")
-                                .getDouble("value") / 1000;
-                        if (i == 0) {
-                            String branchISO = branches.get(i).getStreet().getCity().getCountry().getCode();
-                            if (currentDistance < minDistanceToSource && !branchISO.equals(sourceISO)) {
-                                minDistanceToSource = currentDistance;
-                                closestBranchToSourceIndex = j;
+                for (int j = startIndex; j < endIndex; j++) {
+                    Branch destinationBranch = connectedBranches.get(j);
+                    // Handle empty JSONArrays.
+                    if (!json.getJSONArray("rows").isEmpty() && !json.getJSONArray("rows").getJSONObject(0).getJSONArray("elements").isEmpty()) {
+                        if (json.getJSONArray("rows").getJSONObject(0).getJSONArray("elements").getJSONObject(j - startIndex).has("distance")) {
+                            double distance = json.getJSONArray("rows").getJSONObject(0).getJSONArray("elements").getJSONObject(j - startIndex).getJSONObject("distance").getDouble("value");
+                            DefaultWeightedEdge edge = graph.addEdge(sourceBranch.getId(), destinationBranch.getId());
+                            if (edge != null) {
+                                graph.setEdgeWeight(edge, distance);
                             }
                         } else {
-                            String branchISO = branches.get(i).getStreet().getCity().getCountry().getCode();
-                            if (currentDistance < minDistanceToDestination && !branchISO.equals(sourceISO)) {
-                                minDistanceToDestination = currentDistance;
-                                closestBranchToDestinationIndex = j;
+                            // If the distance is not found, we will have to use the Haversine formula.
+                            double sourceLatitude = sourceBranch.getStreet().getCity().getLatitude();
+                            double sourceLongitude = sourceBranch.getStreet().getCity().getLongitude();
+                            double destinationLatitude = destinationBranch.getStreet().getCity().getLatitude();
+                            double destinationLongitude = destinationBranch.getStreet().getCity().getLongitude();
+                            double distance = haversineDistance(sourceLatitude, sourceLongitude, destinationLatitude, destinationLongitude);
+                            DefaultWeightedEdge edge = graph.addEdge(sourceBranch.getId(), destinationBranch.getId());
+                            if (edge != null) {
+                                graph.setEdgeWeight(edge, distance);
                             }
                         }
                     }
                 }
-                Pair<Branch, Branch> closestBranches = new Pair<>(
-                        branches.get(closestBranchToSourceIndex),
-                        branches.get(closestBranchToDestinationIndex)
-                );
-                return closestBranches;
             }
-        } catch (Exception e) {
-            log.severe("Failed finding closest branches.");
-            return null;
+            // Reset the destinations StringBuilder.
+            destinations = new StringBuilder();
         }
-        return null;
     }
 
-
-    private double getDistanceBetweenCoordinates(double sourceLatitude, double sourceLongitude,
-                                                 double destinationLatitude, double destinationLongitude) {
-        try {
-            String apiUrl = "https://maps.googleapis.com/maps/api/distancematrix/json";
-            //URL url = new URL(apiUrl);
-            Client client = ClientBuilder.newClient();
-            Response response = client.target(apiUrl)
-                    .queryParam("origins", sourceLatitude + "," + sourceLongitude)
-                    .queryParam("destinations", destinationLatitude + "," + destinationLongitude)
-                    .queryParam("units", "metric")
-                    .queryParam("key", "AIzaSyARV5eFh9Kopz9tNUBFZWjpD8QS99mGDqE")
-                    .request()
-                    .get();
-
-            if (response.getStatus() == 200) {
-                // Read the JSON response and extract the rows -> elements -> distance -> value.
-                // The value is the distance in meters.
-                JSONObject json = new JSONObject(response.readEntity(String.class));
-                return json.getJSONArray("rows")
-                        .getJSONObject(0)
-                        .getJSONArray("elements")
-                        .getJSONObject(0)
-                        .getJSONObject("distance")
-                        .getDouble("value") / 1000;
-
-            }
-        } catch (Exception e) {
-            log.severe(e.getMessage());
-            rollbackTx();
-        }
-        return 0;
+    /**
+     * Calculates the distance between two points on Earth using the Haversine formula.
+     *
+     * @param sourceLatitude        The latitude of the source point.
+     * @param sourceLongitude       The longitude of the source point.
+     * @param destinationLatitude   The latitude of the destination point.
+     * @param destinationLongitude  The longitude of the destination point.
+     * @return The distance between the two points on Earth.
+     */
+    private double haversineDistance(double sourceLatitude, double sourceLongitude,
+                                     double destinationLatitude, double destinationLongitude) {
+        double earthRadius = 6371; // km
+        double dLat = Math.toRadians(destinationLatitude - sourceLatitude);
+        double dLon = Math.toRadians(destinationLongitude - sourceLongitude);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(Math.toRadians(sourceLatitude)) * Math.cos(Math.toRadians(destinationLatitude)) *
+                        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        return earthRadius * c;
     }
 
     private void beginTx() {
@@ -496,16 +411,6 @@ public class RoutingBean {
     private void rollbackTx() {
         if (em.getTransaction().isActive()) {
             em.getTransaction().rollback();
-        }
-    }
-
-    class Pair<T, U> {
-        public final T t;
-        public final U u;
-
-        public Pair(T t, U u) {
-            this.t= t;
-            this.u= u;
         }
     }
 
