@@ -148,7 +148,29 @@ public class RoutingBean {
                     destinations.append("|");
                 }
             }
-            String apiUrl = "https://maps.googleapis.com/maps/api/distancematrix/json";
+
+            HashMap<Integer, Double> distances = new HashMap<>();
+            if (branchesInSameCountry.size() < 25) {
+                // Make small request for same country.
+                distances = makeSmallRequestForCountriesInSameCountry(origins.toString(), destinations.toString(), branchesInSameCountry);
+            } else {
+                // Make batched request for same country.
+                distances = makeBatchedRequestForCountriesInSameCountry(origins.toString(), destinations.toString(), branchesInSameCountry);
+            }
+
+            // Parse the resulting distances and find the closest branch.
+            double minDistance = Double.MAX_VALUE;
+            Branch closestBranch = null;
+            for (Branch branch : branchesInSameCountry) {
+                double distance = distances.get(branch.getId());
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    closestBranch = branch;
+                }
+            }
+            return closestBranch;
+
+            /*String apiUrl = "https://maps.googleapis.com/maps/api/distancematrix/json";
             String apiKey = "AIzaSyARV5eFh9Kopz9tNUBFZWjpD8QS99mGDqE";
             Client client = ClientBuilder.newClient();
             Response response = client.target(apiUrl)
@@ -161,14 +183,29 @@ public class RoutingBean {
 
             if (response.getStatus() == 200) {
                 JSONObject json = new JSONObject(response.readEntity(String.class));
+                log.info("JSON: " + json.toString());
                 double minDistance = Double.MAX_VALUE;
                 Branch closestBranch = null;
                 for (int i = 0; i < branchesInSameCountry.size(); i++) {
                     Branch branch = branchesInSameCountry.get(i);
-                    double distance = json.getJSONArray("rows").getJSONObject(0).getJSONArray("elements").getJSONObject(i).getJSONObject("distance").getDouble("value");
-                    if (distance < minDistance) {
-                        minDistance = distance;
-                        closestBranch = branch;
+                    // Handle empty JSONArrays.
+                    if (!json.getJSONArray("rows").isEmpty() && !json.getJSONArray("rows").getJSONObject(0).getJSONArray("elements").isEmpty()) {
+                        if (json.getJSONArray("rows").getJSONObject(0).getJSONArray("elements").getJSONObject(i).has("distance")) {
+                            double distance = json.getJSONArray("rows").getJSONObject(0).getJSONArray("elements").getJSONObject(i).getJSONObject("distance").getDouble("value");
+                            if (distance < minDistance) {
+                                minDistance = distance;
+                                closestBranch = branch;
+                            }
+                        } else {
+                            // If the distance is not found, we will have to use the Haversine formula.
+                            double destinationLatitude = branch.getStreet().getCity().getLatitude();
+                            double destinationLongitude = branch.getStreet().getCity().getLongitude();
+                            double distance = haversineDistance(sourceLatitude, sourceLongitude, destinationLatitude, destinationLongitude);
+                            if (distance < minDistance) {
+                                minDistance = distance;
+                                closestBranch = branch;
+                            }
+                        }
                     }
                 }
                 return closestBranch;
@@ -187,7 +224,7 @@ public class RoutingBean {
                     }
                 }
                 return closestBranch;
-            }
+            }*/
         } else {
             // If the provided street is the address of a branch, just return that branch.
             return branches.stream().filter(branch -> branch.getStreet().equals(street)).findFirst().orElse(null);
@@ -373,6 +410,127 @@ public class RoutingBean {
             // Reset the destinations StringBuilder.
             destinations = new StringBuilder();
         }
+    }
+
+    private HashMap<Integer, Double> makeSmallRequestForCountriesInSameCountry(String origins, String destinations, List<Branch> branchesInSameCountry) {
+
+        String apiUrl = "https://maps.googleapis.com/maps/api/distancematrix/json";
+        String apiKey = "AIzaSyARV5eFh9Kopz9tNUBFZWjpD8QS99mGDqE";
+        Client client = ClientBuilder.newClient();
+        Response response = client.target(apiUrl)
+                .queryParam("origins", origins)
+                .queryParam("destinations", destinations)
+                .queryParam("units", "metric")
+                .queryParam("key", apiKey)
+                .request()
+                .get();
+
+        HashMap<Integer, Double> distances = new HashMap<>();
+
+        if (response.getStatus() == 200) {
+            JSONObject json = new JSONObject(response.readEntity(String.class));
+
+            for (int i = 0; i < branchesInSameCountry.size(); i++) {
+                Branch branch = branchesInSameCountry.get(i);
+                // Handle empty JSONArrays.
+                if (!json.getJSONArray("rows").isEmpty() && !json.getJSONArray("rows").getJSONObject(0).getJSONArray("elements").isEmpty()) {
+                    if (json.getJSONArray("rows").getJSONObject(0).getJSONArray("elements").getJSONObject(i).has("distance")) {
+                        double distance = json.getJSONArray("rows").getJSONObject(0).getJSONArray("elements").getJSONObject(i).getJSONObject("distance").getDouble("value");
+                        distances.put(branch.getId(), distance);
+                    } else {
+                        // If the distance is not found, we will have to use the Haversine formula.
+                        double sourceLatitude = branch.getStreet().getCity().getLatitude();
+                        double sourceLongitude = branch.getStreet().getCity().getLongitude();
+                        double destinationLatitude = branch.getStreet().getCity().getLatitude();
+                        double destinationLongitude = branch.getStreet().getCity().getLongitude();
+                        double distance = haversineDistance(sourceLatitude, sourceLongitude, destinationLatitude, destinationLongitude);
+                        distances.put(branch.getId(), distance);
+                    }
+                } else {
+                    // If the Google API request fails, we will have to find the closest branch to the customer's address
+                    // using the Haversine formula.
+                    double sourceLatitude = branch.getStreet().getCity().getLatitude();
+                    double sourceLongitude = branch.getStreet().getCity().getLongitude();
+                    for (Branch b : branchesInSameCountry) {
+                        double destinationLatitude = b.getStreet().getCity().getLatitude();
+                        double destinationLongitude = b.getStreet().getCity().getLongitude();
+                        double distance = haversineDistance(sourceLatitude, sourceLongitude, destinationLatitude, destinationLongitude);
+                        distances.put(b.getId(), distance);
+                    }
+                }
+            }
+        }
+
+        return distances;
+    }
+
+    private HashMap<Integer, Double> makeBatchedRequestForCountriesInSameCountry(String origins, String destinations, List<Branch> branchesInSameCountry) {
+
+        HashMap<Integer, Double> distances = new HashMap<>();
+
+        final int batchSize = 25;
+        final int numberOfBatches = (int) Math.ceil((double) branchesInSameCountry.size() / batchSize);
+        for (int i = 0; i < numberOfBatches; i++) {
+            int startIndex = i * batchSize;
+            int endIndex = Math.min((i + 1) * batchSize, branchesInSameCountry.size());
+            for (int j = startIndex; j < endIndex; j++) {
+                Branch branch = branchesInSameCountry.get(j);
+                double destinationLatitude = branch.getStreet().getCity().getLatitude();
+                double destinationLongitude = branch.getStreet().getCity().getLongitude();
+                destinations += destinationLatitude + "," + destinationLongitude;
+                if (j != endIndex - 1) {
+                    destinations += "|";
+                }
+            }
+
+            String apiUrl = "https://maps.googleapis.com/maps/api/distancematrix/json";
+            String apiKey = "AIzaSyB-5Z6Z6Z6Z6Z6Z6Z6Z6Z6Z6Z6Z6Z6Z6Z6";
+            Client client = ClientBuilder.newClient();
+            Response response = client.target(apiUrl)
+                    .queryParam("origins", origins)
+                    .queryParam("destinations", destinations)
+                    .queryParam("units", "metric")
+                    .queryParam("key", apiKey)
+                    .request()
+                    .get();
+
+            if (response.getStatus() == 200) {
+                JSONObject json = new JSONObject(response.readEntity(String.class));
+
+                for (int j = startIndex; j < endIndex; j++) {
+                    Branch branch = branchesInSameCountry.get(j);
+                    // Handle empty JSONArrays.
+                    if (!json.getJSONArray("rows").isEmpty() && !json.getJSONArray("rows").getJSONObject(0).getJSONArray("elements").isEmpty()) {
+                        if (json.getJSONArray("rows").getJSONObject(0).getJSONArray("elements").getJSONObject(j - startIndex).has("distance")) {
+                            double distance = json.getJSONArray("rows").getJSONObject(0).getJSONArray("elements").getJSONObject(j - startIndex).getJSONObject("distance").getDouble("value");
+                            distances.put(branch.getId(), distance);
+                        } else {
+                            // If the distance is not found, we will have to use the Haversine formula.
+                            double sourceLatitude = branch.getStreet().getCity().getLatitude();
+                            double sourceLongitude = branch.getStreet().getCity().getLongitude();
+                            double destinationLatitude = branch.getStreet().getCity().getLatitude();
+                            double destinationLongitude = branch.getStreet().getCity().getLongitude();
+                            double distance = haversineDistance(sourceLatitude, sourceLongitude, destinationLatitude, destinationLongitude);
+                            distances.put(branch.getId(), distance);
+                        }
+                    } else {
+                        // If the Google API request fails, we will have to find the closest branch to the customer's address
+                        // using the Haversine formula.
+                        double sourceLatitude = branch.getStreet().getCity().getLatitude();
+                        double sourceLongitude = branch.getStreet().getCity().getLongitude();
+                        for (Branch b : branchesInSameCountry) {
+                            double destinationLatitude = b.getStreet().getCity().getLatitude();
+                            double destinationLongitude = b.getStreet().getCity().getLongitude();
+                            double distance = haversineDistance(sourceLatitude, sourceLongitude, destinationLatitude, destinationLongitude);
+                            distances.put(b.getId(), distance);
+                        }
+                    }
+                }
+            }
+            // Reset the destinations StringBuilder.
+            destinations = "";
+        }
+        return distances;
     }
 
     /**
