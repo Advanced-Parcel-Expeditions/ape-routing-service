@@ -12,9 +12,11 @@ import javax.annotation.PostConstruct;
 import javax.enterprise.context.ApplicationScoped;
 import javax.inject.Inject;
 import javax.persistence.EntityManager;
+import javax.persistence.TypedQuery;
 import javax.ws.rs.client.Client;
 import javax.ws.rs.client.ClientBuilder;
 import javax.ws.rs.core.Response;
+import java.lang.reflect.Type;
 import java.util.*;
 import java.util.logging.Logger;
 
@@ -86,7 +88,7 @@ public class RoutingBean {
             return new Pair<>(null, Reason.INTERNAL_ERROR);
         }
 
-        if (sourceBranch.equals(destinationBranch)) {
+        if (sourceBranch.getId().equals(destinationBranch.getId())) {
             return new Pair<>(sourceBranch, Reason.ALREADY_AT_DESTINATION);
         }
 
@@ -107,12 +109,29 @@ public class RoutingBean {
 
         // Parse the path to find the next hop.
         int nextHopId = graph.getEdgeTarget(path.get(0));
-        System.out.println("PATH SIZE:" + path.size());
+        /*System.out.println("PATH SIZE:" + path.size());
         if (path.size() > 1) {
             for (int i = 1; i < path.size(); i++) {
                 System.out.println("PATH " + i + ": " + graph.getEdgeTarget(path.get(i)));
             }
+        }*/
+
+        // If we are here, we passed the check for final parcel center. If the returned street here is the same as the
+        // source street, get the next hop in branch where possible.
+        Branch nextHop = BranchConverter.toDto(em.find(BranchEntity.class, nextHopId));
+        if (nextHop.getStreet().equals(source)) {
+            int i = 0;
+            do {
+                if (i < path.size()) {
+                    nextHopId = graph.getEdgeTarget(path.get(i));
+                    nextHop = BranchConverter.toDto(em.find(BranchEntity.class, nextHopId));
+                    i++;
+                } else {
+                    return new Pair<>(null, Reason.NO_PATH_FOUND);
+                }
+            } while (nextHop.getStreet().equals(source));
         }
+
         return new Pair<>(BranchConverter.toDto(em.find(BranchEntity.class, nextHopId)), Reason.PATH_FOUND);
     }
 
@@ -123,7 +142,9 @@ public class RoutingBean {
      * @return The closest branch to the provided street.
      */
     private Branch getClosestBranch(Street street) {
-        List<BranchEntity> branchEntities = em.createNamedQuery("BranchEntity.getAll", BranchEntity.class).getResultList();
+        TypedQuery<BranchEntity> branchesQuery = em.createNamedQuery("BranchEntity.getAllWithType", BranchEntity.class);
+        branchesQuery.setParameter("branchTypeId", 1);
+        List<BranchEntity> branchEntities = branchesQuery.getResultList();
         List<Branch> branches = branchEntities.stream().map(BranchConverter::toDto).toList();
 
         // If the provided street is not the address of a branch, that means the package is being sent from a
@@ -169,62 +190,6 @@ public class RoutingBean {
                 }
             }
             return closestBranch;
-
-            /*String apiUrl = "https://maps.googleapis.com/maps/api/distancematrix/json";
-            String apiKey = "AIzaSyARV5eFh9Kopz9tNUBFZWjpD8QS99mGDqE";
-            Client client = ClientBuilder.newClient();
-            Response response = client.target(apiUrl)
-                    .queryParam("origins", origins)
-                    .queryParam("destinations", destinations)
-                    .queryParam("units", "metric")
-                    .queryParam("key", apiKey)
-                    .request()
-                    .get();
-
-            if (response.getStatus() == 200) {
-                JSONObject json = new JSONObject(response.readEntity(String.class));
-                log.info("JSON: " + json.toString());
-                double minDistance = Double.MAX_VALUE;
-                Branch closestBranch = null;
-                for (int i = 0; i < branchesInSameCountry.size(); i++) {
-                    Branch branch = branchesInSameCountry.get(i);
-                    // Handle empty JSONArrays.
-                    if (!json.getJSONArray("rows").isEmpty() && !json.getJSONArray("rows").getJSONObject(0).getJSONArray("elements").isEmpty()) {
-                        if (json.getJSONArray("rows").getJSONObject(0).getJSONArray("elements").getJSONObject(i).has("distance")) {
-                            double distance = json.getJSONArray("rows").getJSONObject(0).getJSONArray("elements").getJSONObject(i).getJSONObject("distance").getDouble("value");
-                            if (distance < minDistance) {
-                                minDistance = distance;
-                                closestBranch = branch;
-                            }
-                        } else {
-                            // If the distance is not found, we will have to use the Haversine formula.
-                            double destinationLatitude = branch.getStreet().getCity().getLatitude();
-                            double destinationLongitude = branch.getStreet().getCity().getLongitude();
-                            double distance = haversineDistance(sourceLatitude, sourceLongitude, destinationLatitude, destinationLongitude);
-                            if (distance < minDistance) {
-                                minDistance = distance;
-                                closestBranch = branch;
-                            }
-                        }
-                    }
-                }
-                return closestBranch;
-            } else {
-                // If the Google API request fails, we will have to find the closest branch to the customer's address
-                // using the Haversine formula.
-                double minDistance = Double.MAX_VALUE;
-                Branch closestBranch = null;
-                for (Branch branch : branchesInSameCountry) {
-                    double destinationLatitude = branch.getStreet().getCity().getLatitude();
-                    double destinationLongitude = branch.getStreet().getCity().getLongitude();
-                    double distance = haversineDistance(sourceLatitude, sourceLongitude, destinationLatitude, destinationLongitude);
-                    if (distance < minDistance) {
-                        minDistance = distance;
-                        closestBranch = branch;
-                    }
-                }
-                return closestBranch;
-            }*/
         } else {
             // If the provided street is the address of a branch, just return that branch.
             return branches.stream().filter(branch -> branch.getStreet().equals(street)).findFirst().orElse(null);
@@ -236,7 +201,10 @@ public class RoutingBean {
      */
     private void generateGraph() {
         graph = new SimpleWeightedGraph<>(DefaultWeightedEdge.class);
-        List<BranchEntity> branchEntities = em.createNamedQuery("BranchEntity.getAll", BranchEntity.class).getResultList();
+        //List<BranchEntity> branchEntities = em.createNamedQuery("BranchEntity.getAll", BranchEntity.class).getResultList();
+        TypedQuery<BranchEntity> branchesQuery = em.createNamedQuery("BranchEntity.getAllWithType", BranchEntity.class);
+        branchesQuery.setParameter("branchTypeId", 1);
+        List<BranchEntity> branchEntities = branchesQuery.getResultList();
         List<Branch> branches = branchEntities.stream().map(BranchConverter::toDto).toList();
         branches.forEach(branch -> graph.addVertex(branch.getId()));
 
@@ -412,6 +380,15 @@ public class RoutingBean {
         }
     }
 
+    /**
+     * Makes a request to the Google Maps API to get the distances between the source branch and the branches in the
+     * same country. This method is used when the source branch has less than 25 branches in the same country.
+     *
+     * @param origins                 The StringBuilder that contains the origins.
+     * @param destinations            The StringBuilder that contains the destinations.
+     * @param branchesInSameCountry   The list of branches in the same country.
+     * @return The distances between the source branch and the branches in the same country.
+     */
     private HashMap<Integer, Double> makeSmallRequestForCountriesInSameCountry(String origins, String destinations, List<Branch> branchesInSameCountry) {
 
         String apiUrl = "https://maps.googleapis.com/maps/api/distancematrix/json";
@@ -464,6 +441,15 @@ public class RoutingBean {
         return distances;
     }
 
+    /**
+     * Makes multiple requests to the Google Maps API to get the distances between the source branch and the branches in
+     * the same country. This method is used when the source branch has more than 25 branches in the same country.
+     *
+     * @param origins                 The StringBuilder that contains the origins.
+     * @param destinations            The StringBuilder that contains the destinations.
+     * @param branchesInSameCountry   The list of branches in the same country.
+     * @return The distances between the source branch and the branches in the same country.
+     */
     private HashMap<Integer, Double> makeBatchedRequestForCountriesInSameCountry(String origins, String destinations, List<Branch> branchesInSameCountry) {
 
         HashMap<Integer, Double> distances = new HashMap<>();

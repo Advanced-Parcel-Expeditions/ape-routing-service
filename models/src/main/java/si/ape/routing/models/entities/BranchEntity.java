@@ -7,7 +7,9 @@ import javax.persistence.*;
 @NamedQueries(value =
         {
             @NamedQuery(name = "BranchEntity.getAll",
-                query = "SELECT b FROM BranchEntity b")
+                query = "SELECT b FROM BranchEntity b"),
+            @NamedQuery(name = "BranchEntity.getAllWithType",
+                query = "SELECT b FROM BranchEntity b WHERE b.branchType.id = :branchTypeId"),
         })
 public class BranchEntity {
 
