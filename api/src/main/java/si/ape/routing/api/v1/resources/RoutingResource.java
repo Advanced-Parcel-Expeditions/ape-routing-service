@@ -67,5 +67,33 @@ public class RoutingResource {
         return Response.ok(response).build();
     }
 
+    @Operation(description = "Get health check.", summary = "Get health check")
+    @APIResponses({
+            @APIResponse(responseCode = "200",
+                    description = "Service is running."
+            ),
+    })
+    @GET
+    @Path("/health")
+    public Response getHealth() {
+        return Response.ok().build();
+    }
+
+    @Operation(description = "Get ready check.", summary = "Get ready check")
+    @APIResponses({
+            @APIResponse(responseCode = "200",
+                    description = "Service is ready to be used."
+            ),
+    })
+    @GET
+    @Path("/ready")
+    public Response getReady() {
+        if (routingBean.isReady()) {
+            return Response.ok().build();
+        }
+
+        return Response.status(Response.Status.SERVICE_UNAVAILABLE).build();
+    }
+
 
 }

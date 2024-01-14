@@ -197,6 +197,15 @@ public class RoutingBean {
     }
 
     /**
+     * Checks if service is ready by checking if graph is not null and if the graph is not empty.
+     *
+     * @return True if service is ready, false otherwise.
+     */
+    public boolean isReady() {
+        return graph != null && !graph.vertexSet().isEmpty();
+    }
+
+    /**
      * Generates the graph that represents the network of branches.
      */
     private void generateGraph() {
