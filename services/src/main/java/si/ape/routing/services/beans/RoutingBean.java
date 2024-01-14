@@ -184,9 +184,14 @@ public class RoutingBean {
             branchesInPath.add(branchId);
         }
 
-        // Remove the excluded branches from the list of branches in the path.
-        for (Branch branch : excluded) {
-            branchesInPath.remove(branch.getId());
+        if (excluded != null) {
+            // Remove the excluded branches from the list of branches in the path.
+            for (Branch branch : excluded) {
+                if (branchesInPath.contains(branch.getId())) {
+                    log.info("Removing branch " + branch.getId() + " " + branch.getStreet().getCity().getName() + " from path.");
+                }
+                branchesInPath.remove(branch.getId());
+            }
         }
 
         // If the list of branches in the path is empty, that means all the branches in the path are excluded.
