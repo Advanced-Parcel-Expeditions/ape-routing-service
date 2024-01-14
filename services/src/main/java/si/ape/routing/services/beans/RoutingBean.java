@@ -176,30 +176,36 @@ public class RoutingBean {
             return new Pair<>(null, Reason.NO_PATH_FOUND);
         }
 
-        // Parse the path to find the next hop. Exclude the branches that are in the excluded list.
-        List<Branch> pathBranches = new ArrayList<>();
+        // Parse the path and create the list of branches in the path.
+        List<Integer> branchesInPath = new ArrayList<>();
         for (DefaultWeightedEdge edge : path) {
             int branchId = graph.getEdgeTarget(edge);
             Branch branch = BranchConverter.toDto(em.find(BranchEntity.class, branchId));
-            if (!excluded.contains(branch)) {
-                pathBranches.add(branch);
-            }
+            branchesInPath.add(branchId);
         }
 
-        // If the path is empty, that means there is no path between the source and destination.
-        if (pathBranches.isEmpty()) {
-            log.info("Path is empty, the algorithm failed to find a path.");
+        // Remove the excluded branches from the list of branches in the path.
+        for (Branch branch : excluded) {
+            branchesInPath.remove(branch.getId());
+        }
+
+        // If the list of branches in the path is empty, that means all the branches in the path are excluded.
+        if (branchesInPath.isEmpty()) {
             return new Pair<>(null, Reason.NO_PATH_FOUND);
         }
 
+        // Get the next hop from the list of branches in the path.
+        int nextHopId = branchesInPath.get(0);
+        Branch nextHop = BranchConverter.toDto(em.find(BranchEntity.class, nextHopId));
+
         // If we are here, we passed the check for final parcel center. If the returned street here is the same as the
         // source street, get the next hop in branch where possible.
-        Branch nextHop = pathBranches.get(0);
         if (nextHop.getStreet().equals(source)) {
             int i = 0;
             do {
-                if (i < pathBranches.size()) {
-                    nextHop = pathBranches.get(i);
+                if (i < branchesInPath.size()) {
+                    nextHopId = branchesInPath.get(i);
+                    nextHop = BranchConverter.toDto(em.find(BranchEntity.class, nextHopId));
                     i++;
                 } else {
                     return new Pair<>(null, Reason.NO_PATH_FOUND);
@@ -207,9 +213,7 @@ public class RoutingBean {
             } while (nextHop.getStreet().equals(source));
         }
 
-        return new Pair<>(nextHop, Reason.PATH_FOUND);
-
-        //return new Pair<>(BranchConverter.toDto(em.find(BranchEntity.class, nextHopId)), Reason.PATH_FOUND);
+        return new Pair<>(BranchConverter.toDto(em.find(BranchEntity.class, nextHopId)), Reason.PATH_FOUND);
     }
 
     /**
