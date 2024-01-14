@@ -136,6 +136,83 @@ public class RoutingBean {
     }
 
     /**
+     * Gets the next hop between the source and destination while excluding the previous parcel locations.
+     *
+     * @param source      The source street.
+     * @param destination The destination street.
+     * @param excluded    The list of excluded branches.
+     * @return The next hop between the source and destination.
+     */
+    public Pair<Branch, Reason> nextHop(Street source, Street destination, List<Branch> excluded) {
+        Branch sourceBranch = getClosestBranch(source);
+        Branch destinationBranch = getClosestBranch(destination);
+
+        if (sourceBranch == null || destinationBranch == null) {
+            if (sourceBranch == null) {
+                log.severe("Source branch is null.");
+            }
+            if (destinationBranch == null) {
+                log.severe("Destination branch is null.");
+            }
+            return new Pair<>(null, Reason.INTERNAL_ERROR);
+        }
+
+        if (sourceBranch.getId().equals(destinationBranch.getId())) {
+            return new Pair<>(sourceBranch, Reason.ALREADY_AT_DESTINATION);
+        }
+
+        // If the checks above pass, we can use the graph to find the shortest path between the source and destination.
+        //List<DefaultWeightedEdge> path = DijkstraShortestPath.findPathBetween(graph, sourceBranch.getId(), destinationBranch.getId()).getEdgeList();
+        GraphPath<Integer, DefaultWeightedEdge> graphPath = DijkstraShortestPath.findPathBetween(graph, sourceBranch.getId(), destinationBranch.getId());
+        if (graphPath == null) {
+            log.info("Graph path is null, the algorithm failed to find a path.");
+            return new Pair<>(null, Reason.NO_PATH_FOUND);
+        }
+        List<DefaultWeightedEdge> path = graphPath.getEdgeList();
+
+        // If the path is null, that means there is no path between the source and destination.
+        if (path == null || path.isEmpty()) {
+            log.info("Path is null or empty, the algorithm failed to find a path.");
+            return new Pair<>(null, Reason.NO_PATH_FOUND);
+        }
+
+        // Parse the path to find the next hop. Exclude the branches that are in the excluded list.
+        List<Branch> pathBranches = new ArrayList<>();
+        for (DefaultWeightedEdge edge : path) {
+            int branchId = graph.getEdgeTarget(edge);
+            Branch branch = BranchConverter.toDto(em.find(BranchEntity.class, branchId));
+            if (!excluded.contains(branch)) {
+                pathBranches.add(branch);
+            }
+        }
+
+        // If the path is empty, that means there is no path between the source and destination.
+        if (pathBranches.isEmpty()) {
+            log.info("Path is empty, the algorithm failed to find a path.");
+            return new Pair<>(null, Reason.NO_PATH_FOUND);
+        }
+
+        // If we are here, we passed the check for final parcel center. If the returned street here is the same as the
+        // source street, get the next hop in branch where possible.
+        Branch nextHop = pathBranches.get(0);
+        if (nextHop.getStreet().equals(source)) {
+            int i = 0;
+            do {
+                if (i < pathBranches.size()) {
+                    nextHop = pathBranches.get(i);
+                    i++;
+                } else {
+                    return new Pair<>(null, Reason.NO_PATH_FOUND);
+                }
+            } while (nextHop.getStreet().equals(source));
+        }
+
+        return new Pair<>(nextHop, Reason.PATH_FOUND);
+
+        //return new Pair<>(BranchConverter.toDto(em.find(BranchEntity.class, nextHopId)), Reason.PATH_FOUND);
+    }
+
+    /**
      * Gets the closest branch to the provided street.
      *
      * @param street The street.

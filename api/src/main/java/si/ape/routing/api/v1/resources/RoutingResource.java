@@ -3,6 +3,7 @@ package si.ape.routing.api.v1.resources;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
+import si.ape.routing.api.v1.resources.requests.NextHopExcludeRequest;
 import si.ape.routing.api.v1.resources.requests.NextHopRequest;
 import si.ape.routing.api.v1.resources.responses.NextHopResponse;
 import si.ape.routing.lib.Branch;
@@ -66,6 +67,42 @@ public class RoutingResource {
 
         return Response.ok(response).build();
     }
+
+    @Operation(description = "Get next hop between locations.", summary = "Get next hop")
+    @APIResponses({
+            @APIResponse(responseCode = "200",
+                    description = "Next hop in the form of branch is delivered."
+            ),
+            @APIResponse(responseCode = "404", description = "Next hop not found .")
+    })
+    @POST
+    @Path("/next-hop-exclude")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getNextHopExclude(NextHopExcludeRequest request) {
+
+        if (request == null) {
+            return Response.status(Response.Status.BAD_REQUEST).build();
+        }
+
+        Pair<Branch, Reason> nextHopPair = routingBean.nextHop(request.getSource(), request.getDestination(), request.getExclude());
+
+        if (nextHopPair.first == null) {
+            if (nextHopPair.second == Reason.NO_PATH_FOUND) {
+                return Response.status(Response.Status.NOT_FOUND).build();
+            } else {
+                return Response.status(Response.Status.INTERNAL_SERVER_ERROR).build();
+            }
+        }
+
+        System.out.println(nextHopPair.first.getId());
+
+        NextHopResponse response = new NextHopResponse(nextHopPair.first, nextHopPair.second);
+
+        return Response.ok(response).build();
+    }
+
+
 
     @Operation(description = "Get health check.", summary = "Get health check")
     @APIResponses({
