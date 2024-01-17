@@ -404,6 +404,7 @@ public class RoutingBean {
         String apiKey = "";
         try {
             apiKey = new String(zk.getData("/google-api-key", false, new Stat()));
+            System.out.println("API KEY: " + apiKey);
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -473,7 +474,16 @@ public class RoutingBean {
             }
 
             String apiUrl = "https://maps.googleapis.com/maps/api/distancematrix/json";
-            String apiKey = "AIzaSyARV5eFh9Kopz9tNUBFZWjpD8QS99mGDqE";
+            //String apiKey = "AIzaSyARV5eFh9Kopz9tNUBFZWjpD8QS99mGDqE";
+
+            String apiKey = "";
+            try {
+                apiKey = new String(zk.getData("/google-api-key", false, new Stat()));
+                System.out.println("API KEY: " + apiKey);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
             Client client = ClientBuilder.newClient();
             Response response = client.target(apiUrl)
                     .queryParam("origins", origins)
@@ -527,7 +537,16 @@ public class RoutingBean {
     private HashMap<Integer, Double> makeSmallRequestForCountriesInSameCountry(String origins, String destinations, List<Branch> branchesInSameCountry) {
 
         String apiUrl = "https://maps.googleapis.com/maps/api/distancematrix/json";
-        String apiKey = "AIzaSyARV5eFh9Kopz9tNUBFZWjpD8QS99mGDqE";
+        //String apiKey = "AIzaSyARV5eFh9Kopz9tNUBFZWjpD8QS99mGDqE";
+        String apiKey = "";
+
+        try {
+            apiKey = new String(zk.getData("/google-api-key", false, new Stat()));
+            System.out.println("API KEY: " + apiKey);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
         Client client = ClientBuilder.newClient();
         Response response = client.target(apiUrl)
                 .queryParam("origins", origins)
@@ -605,7 +624,17 @@ public class RoutingBean {
             }
 
             String apiUrl = "https://maps.googleapis.com/maps/api/distancematrix/json";
-            String apiKey = "AIzaSyB-5Z6Z6Z6Z6Z6Z6Z6Z6Z6Z6Z6Z6Z6Z6Z6";
+            //String apiKey = "AIzaSyB-5Z6Z6Z6Z6Z6Z6Z6Z6Z6Z6Z6Z6Z6Z6Z6";
+
+            String apiKey = "";
+
+            try {
+                apiKey = new String(zk.getData("/google-api-key", false, new Stat()));
+                System.out.println("API KEY: " + apiKey);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
             Client client = ClientBuilder.newClient();
             Response response = client.target(apiUrl)
                     .queryParam("origins", origins)
