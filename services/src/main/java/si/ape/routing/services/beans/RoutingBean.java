@@ -1,5 +1,8 @@
 package si.ape.routing.services.beans;
 
+import org.apache.zookeeper.Watcher;
+import org.apache.zookeeper.ZooKeeper;
+import org.apache.zookeeper.data.Stat;
 import org.jgrapht.GraphPath;
 import org.jgrapht.alg.shortestpath.DijkstraShortestPath;
 import org.jgrapht.graph.DefaultWeightedEdge;
@@ -9,6 +12,7 @@ import si.ape.routing.lib.Branch;
 import si.ape.routing.lib.Street;
 
 import javax.annotation.PostConstruct;
+import javax.annotation.PreDestroy;
 import javax.enterprise.context.ApplicationScoped;
 import javax.inject.Inject;
 import javax.persistence.EntityManager;
@@ -18,6 +22,7 @@ import javax.ws.rs.client.ClientBuilder;
 import javax.ws.rs.core.Response;
 import java.lang.reflect.Type;
 import java.util.*;
+import java.util.concurrent.CountDownLatch;
 import java.util.logging.Logger;
 
 import si.ape.routing.models.converters.BranchConverter;
@@ -34,10 +39,15 @@ import si.ape.routing.lib.data.Reason;
 @ApplicationScoped
 public class RoutingBean {
 
+    private static final String ZOOKEEPER_ADDRESS = "zookeeper:2181";
+    private static final String CONFIG_ZNODE = "/config";
+
     /**
      * The routing bean's logger.
      */
     private Logger log = Logger.getLogger(RoutingBean.class.getName());
+
+    private ZooKeeper zk;
 
     /**
      * The entity manager.
@@ -61,11 +71,35 @@ public class RoutingBean {
     @PostConstruct
     public void init() {
         log.info("RoutingBean created.");
+        try {
+            CountDownLatch connectedSignal = new CountDownLatch(1);
+            zk = new ZooKeeper(ZOOKEEPER_ADDRESS, 3000, event -> {
+                if (event.getState() == Watcher.Event.KeeperState.SyncConnected) {
+                    connectedSignal.countDown();
+                }
+            });
+
+            connectedSignal.await(); // Wait until connected
+            log.info("Connected to ZooKeeper");
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
         if (graph == null) {
             generateGraph();
         }
         log.info("Graph generated.");
     }
+
+    @PreDestroy
+    public void cleanup() {
+        try {
+            zk.close();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
 
     /**
      * Gets the next hop between the source and destination.
@@ -366,7 +400,13 @@ public class RoutingBean {
         }
 
         String apiUrl = "https://maps.googleapis.com/maps/api/distancematrix/json";
-        String apiKey = "AIzaSyARV5eFh9Kopz9tNUBFZWjpD8QS99mGDqE";
+        //String apiKey = "AIzaSyARV5eFh9Kopz9tNUBFZWjpD8QS99mGDqE";
+        String apiKey = "";
+        try {
+            apiKey = new String(zk.getData("/google-api-key", false, new Stat()));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
         Client client = ClientBuilder.newClient();
         Response response = client.target(apiUrl)
                 .queryParam("origins", origins)
